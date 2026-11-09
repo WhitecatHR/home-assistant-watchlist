@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node test_ui.mjs"},
+  "devDependencies": {"happy-dom": "21.0.4", "css-tree": "3.2.1"}
+}
