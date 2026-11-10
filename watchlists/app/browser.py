@@ -19,6 +19,19 @@ class BrowserBlocked(BrowserProblem):
     pass
 
 
+def merge_collected_rows(found, provider, section, dom_rows, captured):
+    """Prefer structured Netflix activity over DOM links to the same episodes."""
+    structured=provider=='netflix' and section=='history' and bool(captured)
+    if structured:
+        found.clear()
+        for item in captured:found[item['provider_id']]=item
+    else:
+        for row in dom_rows:
+            item=normalize_row(provider,row)
+            if item:found[item['provider_id']]=item
+    return structured
+
+
 class Browsers:
     def __init__(self, data, enabled=True):
         self.root=Path(data)/".sessions"
@@ -189,14 +202,10 @@ class Browsers:
                             self.last_report[section]={'diagnostics':extraction.get('diagnostics',{})}
                             recognized=recognized or extraction.get('recognized',False);selector=extraction.get('selector',selector)
                             rows=extraction.get('rows',[]) if extraction.get('recognized') else []
-                            before=len(found)
-                            for row in rows:
-                                item=normalize_row(provider,row)
-                                if item:found[item['provider_id']]=item
-                            if provider=='netflix' and section=='history' and captured:
-                                for item in captured:found[item['provider_id']]=item
+                            before=set(found)
+                            if merge_collected_rows(found,provider,section,rows,captured):
                                 recognized=True;selector='viewing-activity JSON'
-                            stable=stable+1 if before==len(found) else 0
+                            stable=stable+1 if before==set(found) else 0
                             if stable>=3:break
                             if provider=='netflix' and section=='history':
                                 more=self.page.get_by_role('button',name=re.compile(r'^(Mehr anzeigen|Show more)$',re.I))

@@ -1,3 +1,11 @@
+# 0.2.1
+
+- Netflix-Merkliste: zusätzliche Erkennung über „Meine Liste“/„My List“ auf der bestätigten Listenseite; unterstützt Karten mit generierten Klassen. Empfehlungen und Navigationslinks bleiben ausgeschlossen. Unbekannte Seitenbereiche werden weiterhin nicht als Watchlist übernommen.
+- Die optionale Metadatenübersicht zeigt nur bestätigte Watchlist-Titel und ist zunächst eingeklappt. Reine Verlaufseinträge erzeugen keine lange Zuordnungsliste; ihre Metadaten lassen sich weiterhin in den Titeldetails ergänzen.
+- Strukturierter Netflix-Verlauf hat Vorrang vor DOM-Folgenlinks. Dieselbe Folge wird bei neuen Importen nicht aus beiden Quellen doppelt übernommen. Vorhandene Verlaufseinträge werden dabei nicht gelöscht.
+- Teilimporte melden ausdrücklich, wenn nur der Verlauf erfolgreich war und die Watchlist fehlt. Importdetails enthalten zusätzliche Zähler zur Überschriften-/Bereichserkennung.
+- Anmeldungen, gespeicherte Zuordnungen und persönliche Fortschritte bleiben erhalten. Die angepasste Netflix-Bereichserkennung benötigt noch Bestätigung am Konto.
+
 # 0.2.0
 
 - Anbieter-Watchlists erscheinen direkt, ohne vorgeschaltete Katalogzuordnung; Cover werden auch aus der Quelle übernommen.

@@ -13,7 +13,7 @@ from app.providers import series_title,title_key,search_title,netflix_history_ro
 from app.store import Store
 from app.catalog import Catalog
 from app.main import create_app
-from app.browser import BrowserBlocked,BrowserProblem,Browsers
+from app.browser import BrowserBlocked,BrowserProblem,Browsers,merge_collected_rows
 
 
 def item(title='Reacher - Staffel 1',ident='ONE',**extra):
@@ -238,6 +238,46 @@ class APIImportFixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status_code,503)
         connection=next(c for c in (await self.client.get('/api/profiles/1/connections')).json() if c['provider']=='crunchyroll')
         self.assertEqual(connection['enabled'],0);self.assertEqual(connection['source_profile'],'Person 1')
+
+    async def test_history_success_never_claims_watchlist_success(self):
+        self.app.state.store.connection_update(1,'netflix',source_profile='Person 1')
+        report={'watchlist':{'status':'failed','diagnostics':{'title_links':66,'galleries':0,'history_rows':0,'containers':[]},'message':'Listenbereich nicht erkannt.'},
+                'history':{'status':'ok','count':1,'scope':'viewing-activity JSON','profile_checked':True}}
+        history=netflix_history_rows({'viewedItems':[{'movieID':101,'series':100,'seriesTitle':'Nur im Verlauf','date':1000}]})
+        async def collect(*args):return {'history':history,'_report':report}
+        self.app.state.browsers.collect=collect
+        response=await self.client.post('/api/profiles/1/connections/netflix/sync',headers=self.headers)
+        self.assertEqual(response.status_code,200)
+        self.assertTrue(response.json()['message'].startswith('Watchlist konnte nicht eingelesen werden.'))
+        self.assertIn('Verlauf: 1 Einträge',response.json()['message'])
+        library=(await self.client.get('/api/profiles/1/library')).json()
+        self.assertEqual(len(library),1);self.assertFalse(library[0]['providers'][0]['on_watchlist'])
+        connections=(await self.client.get('/api/profiles/1/connections')).json()
+        self.assertEqual(json.loads(next(c for c in connections if c['provider']=='netflix')['last_report']),report)
+
+
+class CollectionSourceTests(unittest.TestCase):
+    def test_netflix_json_replaces_dom_history_instead_of_duplicating_episodes(self):
+        dom=[{'url':'https://www.netflix.com/title/101','title':'Serie: Staffel 1: Folge A'}]
+        found={}
+        self.assertFalse(merge_collected_rows(found,'netflix','history',dom,[]))
+        self.assertEqual(list(found),['/title/101'])
+        captured=netflix_history_rows({'viewedItems':[{'movieID':101,'series':100,'seriesTitle':'Serie'},
+            {'movieID':102,'series':100,'seriesTitle':'Serie'}]})
+        self.assertTrue(merge_collected_rows(found,'netflix','history',dom,captured))
+        self.assertEqual(set(found),{'/watch/101','/watch/102'})
+        # Repeated responses and further DOM scrolling must not add the episode again.
+        self.assertTrue(merge_collected_rows(found,'netflix','history',dom,captured+captured))
+        self.assertEqual(len(found),2)
+
+    def test_structured_history_does_not_replace_the_watchlist_or_other_providers(self):
+        captured=netflix_history_rows({'viewedItems':[{'movieID':101,'title':'Verlauf'}]})
+        found={}
+        self.assertFalse(merge_collected_rows(found,'netflix','watchlist',[{'url':'https://www.netflix.com/title/200','title':'Merkliste'}],captured))
+        self.assertEqual(list(found),['/title/200'])
+        prime={}
+        self.assertFalse(merge_collected_rows(prime,'prime','history',[{'url':'https://www.primevideo.com/detail/ABC','title':'Prime'}],captured))
+        self.assertEqual(list(prime),['/detail/ABC'])
 
 
 class BrowserGuardTests(unittest.IsolatedAsyncioTestCase):

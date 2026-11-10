@@ -160,7 +160,26 @@ EXTRACT_JS = r"""({provider, section}) => {
     disney: {watchlist:'[data-testid="watchlist"], [data-gv2elementkey="watchlist"], [aria-label="Watchlist"]'},
     crunchyroll: {watchlist:'.erc-watchlist, [data-t="watchlist"], [data-testid="watchlist"]',history:'.erc-watch-history, [data-t="watch-history"]'}
   };
+  const excludedSelector='[data-list-context="similars"], [data-testid*="recommend"], [data-uia*="recommend"], [aria-label*="recommend" i], [aria-label*="empfehl" i], .recommendations, nav, footer, aside';
+  const recommendationLabel=/^(?:empfehlungen|für dich empfohlen|das könnte dir (?:auch )?gefallen|ähnliche titel|more like this|recommend(?:ations|ed for you)|you might also like|suggestions for you|weiterschauen|continue watching)\b/i;
+  const recommendationRegions=[...document.querySelectorAll('section,[role="region"],[role="list"],[role="grid"]')].filter(e=>recommendationLabel.test((e.getAttribute('aria-label') || e.querySelector('h1,h2,h3,[role="heading"]')?.textContent || '').trim()));
+  const excluded=a=>!!a.closest(excludedSelector) || recommendationRegions.some(e=>e.contains(a));
+  const titleLinks=element=>[...element.querySelectorAll('a[href]')].filter(a=>patterns[provider].test(a.href) && !excluded(a));
   let root=document.querySelector(selectors[provider]?.[section] || 'watchlists-no-such-element');
+  let headingScope=false;
+  const netflixHeadings=provider==='netflix' && section==='watchlist' ? [...document.querySelectorAll('h1,h2,h3,[role="heading"],[data-uia="my-list-title"],.sub-header .title')].filter(h=>/^(meine liste|my list)$/i.test(h.textContent.replace(/\s+/g,' ').trim()) && !excluded(h)) : [];
+  // The browser also checks this route before extraction. Never use all page links as a list.
+  if (!root && netflixHeadings.length && /^\/browse\/my-list\/?$/i.test(location.pathname)) {
+    for (const heading of netflixHeadings) {
+      let candidate=heading.parentElement;
+      for (let depth=0;candidate && candidate!==document.body && candidate!==document.documentElement && depth<7;depth++,candidate=candidate.parentElement) {
+        if (titleLinks(candidate).length) {root=candidate;break;}
+      }
+      // A labelled, empty semantic list is valid; an unlabelled page remains unrecognized.
+      if (!root) root=heading.closest('main,[role="main"],section,[role="region"]');
+      if (root) {headingScope=true;break;}
+    }
+  }
   if (!root && provider==='prime') {
     const main=document.querySelector('main, [role="main"]');
     const heading=[...(main?.querySelectorAll('h1,h2,h3')||[])].find(h=>section==='watchlist'?/watchlist|merkliste/i.test(h.textContent):/watch history|wiedergabeverlauf|wiedergabe-verlauf/i.test(h.textContent));
@@ -168,21 +187,32 @@ EXTRACT_JS = r"""({provider, section}) => {
   }
   const diagnostics={title_links:[...document.querySelectorAll('a[href]')].filter(a=>patterns[provider].test(a.href)).length,
     galleries:document.querySelectorAll('.galleryContent,.my-list-gallery').length,history_rows:document.querySelectorAll('.retableRow').length,
+    my_list_headings:netflixHeadings.length,main_regions:document.querySelectorAll('main,[role="main"]').length,heading_scope:headingScope,
     containers:[...new Set([...document.querySelectorAll('[class]')].map(e=>typeof e.className==='string'?e.className:'').filter(s=>/watchlist|history|gallery/i.test(s)))].slice(0,15).map(s=>s.slice(0,100))};
   if (!root) return {recognized:false,rows:[],reason:'Listenbereich nicht erkannt',diagnostics};
   const result = [];
   const seen = new Set();
   for (const a of root.querySelectorAll('a[href]')) {
     if (!patterns[provider].test(a.href)) continue;
-    if(a.closest('[data-list-context="similars"], [data-testid*="recommend"], [data-uia*="recommend"], .recommendations, nav, footer')) continue;
-    const card = a.closest('article, li, tr, .title-card, .retableRow, [data-testid*="card"], [class*="erc-watch-history"], [class*="erc-watchlist-card"]') || a;
+    if(excluded(a)) continue;
+    let card = a.closest('article, li, tr, [role="listitem"], .title-card, .retableRow, [data-uia="title-card"], [data-uia="title-card-container"], [data-testid*="card"], [class*="erc-watch-history"], [class*="erc-watchlist-card"]');
+    if (!card || !root.contains(card)) {
+      card=a;
+      // Modern Netflix cards may have generated classes. Keep the poster and controls
+      // together, stopping before a parent contains posters belonging to other titles.
+      if (provider==='netflix') for (let candidate=a.parentElement,depth=0;candidate && candidate!==root && root.contains(candidate) && depth<4;depth++,candidate=candidate.parentElement) {
+        const images=candidate.querySelectorAll('img[alt]');
+        if (images.length>1 || titleLinks(candidate).length>4) break;
+        if (images.length===1) card=candidate;
+      }
+    }
     const img = card.querySelector('img[alt]');
     const heading = card.querySelector('h2,h3,h4,[data-testid*="title"]');
     const title = heading?.textContent?.trim() || card.querySelector('.fallback-text')?.textContent?.trim() || img?.alt?.trim() || a.getAttribute('aria-label') || a.textContent.trim();
     const url = new URL(a.href);
     if(provider==='netflix') {
       const more=card.querySelector('a[href*="jbv="]');
-      const titleId=new URL(more?.href || a.href).searchParams.get('jbv');
+      const titleId=new URL(more?.href || a.href).searchParams.get('jbv') || (section==='watchlist' ? card.querySelector('a[href*="/title/"]')?.href.match(/\/title\/(\d+)/)?.[1] || url.pathname.match(/\/(?:title|watch)\/(\d+)/)?.[1] : null);
       if(titleId && /^\d+$/.test(titleId))url.pathname='/title/'+titleId;
     }
     url.search=''; url.hash='';
@@ -198,7 +228,7 @@ EXTRACT_JS = r"""({provider, section}) => {
     }
     result.push({title:title.slice(0,300),url:url.href,text:(card.textContent || '').slice(0,1200),completion,image:img?.currentSrc || img?.src || null,media_type:card.getAttribute('data-content-type') || card.getAttribute('data-entity-type')});
   }
-  return {recognized:true,rows:result.slice(0,2000),selector:root.tagName+'.'+root.className,diagnostics};
+  return {recognized:true,rows:result.slice(0,2000),selector:(headingScope?'My List heading · ':'')+root.tagName+'.'+root.className,diagnostics};
 }"""
 
 PAGE_STATUS_JS = r"""() => {

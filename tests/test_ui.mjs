@@ -109,6 +109,25 @@ assert.equal(observations[1].completion,null);
 assert.ok(!observations.some(o=>o.title==='Fremde Empfehlung'));
 fixture.document.body.innerHTML='<article><a href="/title/999"><img alt="Keine bestätigte Liste"></a></article>';
 assert.equal(extract({provider:'netflix',section:'watchlist'}).recognized,false);
+// New Netflix layouts can use generated classes without the old gallery containers.
+fixture.document.body.innerHTML=`<nav><a href="/title/777">Navigation</a></nav><main><header><h1>Meine Liste</h1></header><div class="generated-grid"><div class="random-card"><a href="/watch/101"><img alt="Dr. House" src="https://occ-0-1.1.nflxso.net/house.jpg"></a><a href="/browse/my-list?jbv=100" aria-label="Mehr Infos">Mehr Infos</a></div><div class="random-card"><a href="/title/200"><img alt="Mein Film"></a></div></div><section><h2>Das könnte dir gefallen</h2><a href="/title/999"><img alt="Empfehlung ohne Spezialklasse"></a></section></main><footer><a href="/title/888">Fußzeile</a></footer>`;
+let modern=extract({provider:'netflix',section:'watchlist'});
+assert.equal(modern.recognized,true);
+assert.equal(modern.diagnostics.galleries,0);
+assert.equal(modern.diagnostics.my_list_headings,1);
+assert.equal(modern.diagnostics.heading_scope,true);
+assert.deepEqual(structuredClone(modern.rows.map(r=>[r.title,new URL(r.url).pathname])),[['Dr. House','/title/100'],['Mein Film','/title/200']]);
+fixture.document.body.innerHTML='<main><h1>My List</h1><div role="list"><div role="listitem"><a href="/title/300"><img alt="Dritter Titel"></a></div></div></main>';
+assert.equal(extract({provider:'netflix',section:'watchlist'}).rows[0].title,'Dritter Titel');
+fixture.document.body.innerHTML='<main><h1>Meine Liste</h1><p>Deine Liste ist leer.</p></main>';
+modern=extract({provider:'netflix',section:'watchlist'});
+assert.equal(modern.recognized,true);assert.equal(modern.rows.length,0);
+fixture.document.body.innerHTML='<main><h1>Für dich</h1><a href="/title/999"><img alt="Unbestätigt"></a></main>';
+assert.equal(extract({provider:'netflix',section:'watchlist'}).recognized,false);
+fixture.document.body.innerHTML='<main><h1>Meine Liste</h1><a href="/title/999"><img alt="Falsche Route"></a></main>';
+fixture.happyDOM.setURL('https://www.netflix.com/browse');
+assert.equal(extract({provider:'netflix',section:'watchlist'}).recognized,false);
+fixture.happyDOM.setURL('https://www.netflix.com/browse/my-list');
 const statusCode=py.match(/PAGE_STATUS_JS = r"""([\s\S]*?)"""/)[1];
 const status=fixture.eval('('+statusCode+')');
 fixture.document.body.textContent='Sicherheitsüberprüfung. Bestätigen Sie, dass Sie ein Mensch sind.';
@@ -148,6 +167,25 @@ w.document.querySelector('#native-position').dispatchEvent(new w.Event('submit',
 await until(()=>nativeSeries.source_position.episode===8);
 await wait(60);
 await w.WatchApp.closeModal();
+// A large viewing history is not a bulk metadata to-do list. Watchlist enrichment is collapsed.
+const historyPending=Array.from({length:490},(_,i)=>({id:1000+i,provider:'netflix',title:'Nur Verlauf '+i,section:'history',sections:['history'],native_show_id:-12,legacy:false}));
+const listPending={id:9,provider:'netflix',title:'Dr. House',section:'watchlist',sections:['watchlist','history'],native_show_id:-11,legacy:false};
+Object.assign(w.WatchApp.state,{pending:[...historyPending,listPending],view:'connections'});
+w.WatchApp.render();
+const metadata=w.document.querySelector('#watchlist-metadata');
+assert.ok(metadata);assert.equal(metadata.open,false);
+assert.match(metadata.querySelector('summary').textContent,/optional · 1 Titel/);
+assert.equal(metadata.querySelectorAll('[data-resolve]').length,1);
+assert.ok(!w.document.querySelector('#main').textContent.includes('Nur Verlauf 0'));
+// Metadata remains available within a history title's own detail dialog.
+Object.assign(w.WatchApp.state,{view:'home',collection:'history'});
+w.WatchApp.render();
+w.document.querySelector('[data-show="-12"]').click();
+assert.ok(w.document.querySelector('#native-metadata'));
+await w.WatchApp.closeModal();
+Object.assign(w.WatchApp.state,{pending:historyPending,view:'connections'});
+w.WatchApp.render();
+assert.equal(w.document.querySelector('#watchlist-metadata'),null);
 w.WatchAPI=originalAPI;
 
 // CSS parses, mobile adaptations exist, and unsafe text is escaped.
@@ -159,4 +197,4 @@ assert.match(styles,/prefers-reduced-motion/);
 assert.equal(w.WatchApp.esc('<img onerror="bad">'),'&lt;img onerror=&quot;bad&quot;&gt;');
 assert.deepEqual(errors,[]);
 await w.happyDOM.close();await fixture.happyDOM.close();
-console.log(JSON.stringify({passed:true,checks:['two profile separation','cover rendering','episode editing','tap','hold 550ms and click suppression','drag and cancel','catalog search and add','honest connection demo','scoped DOM extraction excludes recommendations','unknown roots rejected','security check recognized','native titles without matching','watchlist/history/legacy separated','movie seen status','native episode position','CSS parsing','escaping'],browserVisualQA:false},null,2));
+console.log(JSON.stringify({passed:true,checks:['two profile separation','cover rendering','episode editing','tap','hold 550ms and click suppression','drag and cancel','catalog search and add','honest connection demo','scoped DOM extraction excludes recommendations','modern Netflix heading scope and duplicate card links','empty named list accepted','unknown roots and wrong route rejected','security check recognized','native titles without matching','watchlist/history/legacy separated','movie seen status','native episode position','490 history entries excluded from collapsed watchlist metadata','history metadata available per title','CSS parsing','escaping'],browserVisualQA:false},null,2));

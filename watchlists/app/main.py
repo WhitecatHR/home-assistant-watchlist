@@ -97,7 +97,10 @@ def create_app(data=None, standalone=False, catalog=None):
                 parts=[]
                 for section,label in [('watchlist','Merkliste'),('history','Verlauf')]:
                     parts.append(f"{label}: {len(results[section])} Einträge" if section in results else f"{label}: nicht eingelesen")
-                message=' · '.join(parts)+'. Titel werden direkt angezeigt; Katalogdaten sind optional.'
+                if 'watchlist' not in results:
+                    message='Watchlist konnte nicht eingelesen werden. '+' · '.join(parts)+'. Verlaufseinträge gehören nicht automatisch zur Watchlist.'
+                else:
+                    message=' · '.join(parts)+'. Watchlist-Titel werden direkt angezeigt; Katalogdaten sind optional.'
                 warnings=[v.get('message') for v in report.values() if isinstance(v,dict) and v.get('message')]
                 if warnings:message+=' '+' '.join(warnings)
                 if provider=="disney":

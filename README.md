@@ -4,7 +4,7 @@ Quellcode einer selbst betriebenen Home-Assistant-App für zwei persönliche Fil
 
 **Version 0.2 zeigt neu eingelesene Anbieter-Titel ohne manuelle Katalogzuordnung.** Serien-/Staffelzusätze werden bereinigt, Filme separat unterstützt und Sehverlauf und Merkliste getrennt. Die aktualisierten Anbieteradapter sind noch keine bestätigte Komplettsynchronisierung aller vier Dienste. Siehe [Änderungen](watchlists/CHANGELOG.md) und [Einrichtung und Grenzen](watchlists/DOCS.md).
 
-**Update von 0.1:** Add-on auf 0.2.0 aktualisieren, Weboberfläche neu laden und unter Dienste Netflix/Prime erneut einlesen. Vorhandene Anmeldungen und manuelle Fortschritte bleiben erhalten. Frühere unbestätigte Importe werden unter „Frühere Importe prüfen“ angezeigt. Bei Fehlversuchen helfen die neuen „Importdetails“.
+**Update auf 0.2.1:** Add-on aktualisieren, Weboberfläche neu laden und unter Dienste Netflix/Prime erneut einlesen. Die Netflix-Listenerkennung wurde erweitert; die optionale Metadatenübersicht enthält nur bestätigte Watchlist-Titel und ist eingeklappt. Ein erfolgreicher Verlauf allein bestätigt keine Watchlist. Vorhandene Anmeldungen und manuelle Fortschritte bleiben erhalten. Frühere unbestätigte Importe werden unter „Frühere Importe prüfen“ angezeigt. Bei Fehlversuchen helfen die „Importdetails“.
 
 ## Installation aus Home Assistant
 

@@ -2,9 +2,11 @@
 
 Eine **Home-Assistant-App (Add-on)** für zwei Personen mit experimentellen Anbieterimporten. Die lokale Film-/Serienverwaltung funktioniert unabhängig von diesen Importen. Es gibt keine kostenpflichtige Trakt-, SIMKL- oder Younify-Abhängigkeit. Strom, Speicherplatz und gegebenenfalls die eigene Hardware bleiben eure Kosten.
 
-## Update von 0.1
+## Update auf 0.2.1
 
-Auf 0.2.0 aktualisieren, Weboberfläche neu laden und Netflix/Prime unter Dienste erneut einlesen. Neu erkannte Anbieter-Titel erscheinen direkt mit ihren Quelldaten; eine Katalogzuordnung ist optional. Vorhandene Browser-Anmeldungen und manuelle Folgenstände werden nicht gelöscht. Frühere unbestätigte Importe bleiben unter „Frühere Importe prüfen“ erhalten und werden nicht als neue Watchlist vorausgesetzt.
+Auf 0.2.1 aktualisieren, Weboberfläche neu laden und Netflix/Prime unter Dienste erneut einlesen. Neu erkannte Anbieter-Titel erscheinen direkt mit ihren Quelldaten; eine Katalogzuordnung ist optional. Vorhandene Browser-Anmeldungen und manuelle Folgenstände werden nicht gelöscht. Frühere unbestätigte Importe bleiben unter „Frühere Importe prüfen“ erhalten und werden nicht als neue Watchlist vorausgesetzt.
+
+In 0.2.0 konnte ein erfolgreicher Netflix-Verlauf bei fehlgeschlagener Watchlist Hunderte optionale Metadatenzeilen erzeugen. Diese Zahl ist keine Watchlist-Größe. Ab 0.2.1 ist die Sammelübersicht eingeklappt und enthält nur Titel mit bestätigter Watchlist-Beobachtung. Bei reinen Verlaufseinträgen bleibt die optionale Ergänzung im Titeldialog verfügbar. Die Netflix-Erkennung unterstützt zusätzlich die Listenüberschrift und Karten mit generierten Klassen; in Importdetails muss für die Merkliste `status: ok` stehen. Ein erfolgreicher Verlauf allein bestätigt die Watchlist nicht. Strukturierte Verlaufsdaten ersetzen beim neuen Einlesen die DOM-Verlaufsquelle, statt dieselben Folgen aus beiden Quellen zusammenzuführen. Frühere Verlaufseinträge werden nicht automatisch bereinigt.
 
 „Merkliste“ und „Sehverlauf“ sind getrennte Ansichten. Staffel-/Folgezusätze werden für die optionale Zuordnung bereinigt. Filme lassen sich direkt aus der Anbieter-Liste verwalten oder im separaten Cinemeta-Filmkatalog suchen; dieser kann Originaltitel verwenden. Fehlende Metadaten verhindern die Anzeige eines importierten Titels nicht.
 
