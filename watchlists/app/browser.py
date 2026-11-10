@@ -1,10 +1,11 @@
 """A single local browser, remotely operated through the HA-authenticated UI."""
 import asyncio
 import os
+import re
 import shutil
 import time
 from pathlib import Path
-from .providers import SPECS, EXTRACT_JS, allowed_url, normalize_row
+from .providers import SPECS, EXTRACT_JS, PAGE_STATUS_JS, allowed_url, normalize_row,page_is_section,netflix_history_rows,enrich_netflix
 
 
 class BrowserBusy(Exception):
@@ -12,6 +13,9 @@ class BrowserBusy(Exception):
 
 
 class BrowserProblem(Exception):
+    pass
+
+class BrowserBlocked(BrowserProblem):
     pass
 
 
@@ -27,6 +31,7 @@ class Browsers:
         self.engine=None
         self.last_used=0
         self.interactive=False
+        self.last_report={}
 
     async def close(self):
         if self.context:
@@ -96,6 +101,14 @@ class Browsers:
             self._require(profile_id,provider)
             return await self.page.screenshot(type="jpeg",quality=72,timeout=10000)
 
+    async def status(self,profile_id,provider):
+        if self.lock.locked():raise BrowserBusy('Browser beschäftigt')
+        async with self.lock:
+            self._require(profile_id,provider)
+            data=await self.page.evaluate(PAGE_STATUS_JS)
+            data['message']='Der Anbieter zeigt eine Sicherheitsprüfung. Solange sie blockiert, ist kein automatischer Import möglich. Die Prüfung wird nicht umgangen; Titel lassen sich lokal verwalten.' if data.get('blocked') else ''
+            return data
+
     async def action(self, profile_id, provider, action):
         if self.lock.locked():
             raise BrowserBusy("Browser beschäftigt")
@@ -132,45 +145,101 @@ class Browsers:
             async with self.lock:
                 await self.close()
 
-    async def collect(self, profile_id, provider):
+    async def collect(self, profile_id, provider,expected_profile=None):
         if self.lock.locked() or (self.interactive and time.monotonic()-self.last_used<300):
             raise BrowserBusy("Anmeldefenster ist geöffnet. Erst schließen, dann importieren.")
         async with self.lock:
             await self._open(profile_id,provider)
             results={}
+            self.last_report={}
+            captured=[];tasks=set()
+            def response_handler(response):
+                # Only the site's own viewing-activity responses. No cookies, auth URLs or session JSON are retained.
+                if provider!='netflix' or not allowed_url(provider,response.url,True) or not any(s in response.url.lower() for s in ['viewingactivity','viewing-activity','pathevaluator']):return
+                async def capture():
+                    try:
+                        if 'json' not in response.headers.get('content-type',''):return
+                        body=await response.body()
+                        if len(body)>4_000_000:return
+                        import json
+                        captured.extend(netflix_history_rows(json.loads(body)))
+                    except Exception:pass
+                task=asyncio.create_task(capture());tasks.add(task);task.add_done_callback(tasks.discard)
+            self.page.on('response',response_handler)
             try:
                 for section in ("watchlist","history"):
                     target=SPECS[provider][section]
                     if not target:
                         continue
-                    await self.page.goto(target,wait_until="domcontentloaded",timeout=45000)
-                    await self.page.wait_for_timeout(1500)
-                    # Fail closed on a visible password input or an explicit authentication URL.
-                    if reauth_url(self.page.url) or await self.page.locator('input[type="password"]:visible').count():
-                        raise BrowserProblem("Anmeldung erforderlich. Bitte das richtige Streamingprofil erneut verbinden.")
-                    found={}
-                    stable=0
-                    for _ in range(10):
-                        rows=await self.page.evaluate(EXTRACT_JS,{"provider":provider,"section":section})
-                        before=len(found)
-                        for row in rows:
-                            item=normalize_row(provider,row)
-                            if item:
-                                found[item["provider_id"]]=item
-                        stable=stable+1 if before==len(found) else 0
-                        if stable>=3:
+                    try:
+                        await self.page.goto(target,wait_until="domcontentloaded",timeout=45000)
+                        await self.page.wait_for_timeout(1800)
+                        status=await self.page.evaluate(PAGE_STATUS_JS)
+                        if status.get('blocked'):raise BrowserBlocked('Sicherheitsprüfung des Anbieters blockiert den Import. Regelmäßiger Import wird angehalten; keine Umgehung.')
+                        if expected_profile and status.get('profile') and status['profile'].casefold().strip()!=expected_profile.casefold().strip():
+                            raise BrowserProblem('Das angemeldete Streamingprofil stimmt nicht mit dem bestätigten Profil überein. Bitte Anmeldung und Profilnamen prüfen.')
+                        if reauth_url(self.page.url) or await self.page.locator('input[type="password"]:visible').count():
+                            raise BrowserProblem('Anmeldung erforderlich. Bitte das richtige Streamingprofil erneut verbinden.')
+                        if not page_is_section(provider,section,self.page.url):
+                            raise BrowserProblem('Die Website hat auf einen anderen Bereich umgeleitet. Empfehlungen werden nicht importiert.')
+                        found={};stable=0;recognized=False;selector=''
+                        for _ in range(10):
+                            if tasks:await asyncio.wait(tuple(tasks),timeout=3)
+                            extraction=await self.page.evaluate(EXTRACT_JS,{"provider":provider,"section":section})
+                            self.last_report[section]={'diagnostics':extraction.get('diagnostics',{})}
+                            recognized=recognized or extraction.get('recognized',False);selector=extraction.get('selector',selector)
+                            rows=extraction.get('rows',[]) if extraction.get('recognized') else []
+                            before=len(found)
+                            for row in rows:
+                                item=normalize_row(provider,row)
+                                if item:found[item['provider_id']]=item
+                            if provider=='netflix' and section=='history' and captured:
+                                for item in captured:found[item['provider_id']]=item
+                                recognized=True;selector='viewing-activity JSON'
+                            stable=stable+1 if before==len(found) else 0
+                            if stable>=3:break
+                            if provider=='netflix' and section=='history':
+                                more=self.page.get_by_role('button',name=re.compile(r'^(Mehr anzeigen|Show more)$',re.I))
+                                if await more.count() and await more.first.is_visible():await more.first.click()
+                            await self.page.mouse.wheel(0,900)
+                            await self.page.wait_for_timeout(650)
+                        if not recognized:raise BrowserProblem('Listenbereich nicht erkannt. Es wird nicht die ganze Seite als Watchlist übernommen.')
+                        rows=list(found.values())
+                        if provider=='netflix' and section=='history':
+                            failures=0
+                            for ident in list(dict.fromkeys(r.get('series_id') or int(r['provider_id'].rsplit('/',1)[-1]) for r in rows))[:12]:
+                                metadata=await self.page.evaluate(r'''async id => {
+                                  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),6000);
+                                  try {const r=await fetch('/nq/website/memberapi/release/metadata?languages=de-DE&movieid='+encodeURIComponent(id),{credentials:'same-origin',signal:controller.signal});
+                                    if(!r.ok)return null;const data=await r.json();return data.video || null;
+                                  } catch {return null;} finally {clearTimeout(timer);}
+                                }''',ident)
+                                if not metadata:
+                                    failures+=1
+                                    if failures>=2:break
+                                else:enrich_netflix(rows,metadata)
+                        results[section]=rows
+                        self.last_report[section].update({'status':'ok','count':len(rows),'scope':selector,'profile_checked':bool(status.get('profile'))})
+                    except (BrowserProblem,BrowserBlocked) as exc:
+                        self.last_report.setdefault(section,{}).update({'status':'blocked' if isinstance(exc,BrowserBlocked) else 'failed','message':str(exc)})
+                        if isinstance(exc,BrowserBlocked):
+                            if not results:raise
                             break
-                        await self.page.mouse.wheel(0,900)
-                        await self.page.wait_for_timeout(650)
-                    results[section]=list(found.values())
+                    except Exception:
+                        self.last_report[section]={'status':'failed','message':'Bereich konnte nicht eingelesen werden. Bestehende Daten bleiben erhalten.'}
                 if not any(results.values()):
-                    raise BrowserProblem("Keine Einträge erkannt. Die Liste kann leer sein, die Anmeldung fehlen oder der Seitenadapter muss angepasst werden. Vorhandene Daten bleiben erhalten.")
+                    if results:return {**results,'_report':self.last_report}
+                    detail=next((r.get('message') for r in self.last_report.values() if r.get('message')),None)
+                    raise BrowserProblem(detail or 'Keine bestätigten Listenbereiche erkannt. Bestehende Daten bleiben erhalten.')
+                results['_report']=self.last_report
                 return results
             except (BrowserProblem,BrowserBusy):
                 raise
             except Exception:
                 raise BrowserProblem("Import nicht abgeschlossen. Die Website hat anders geantwortet oder den Zugriff unterbrochen. Vorhandene Daten bleiben erhalten.") from None
             finally:
+                for task in tuple(tasks):task.cancel()
+                if tasks:await asyncio.gather(*tasks,return_exceptions=True)
                 await self.close()
 
 

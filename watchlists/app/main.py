@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .store import Store, PROVIDERS, now
 from .catalog import Catalog
-from .browser import Browsers, BrowserBusy, BrowserProblem
+from .browser import Browsers, BrowserBusy, BrowserProblem,BrowserBlocked
 
 ROOT=Path(__file__).parent
 
@@ -20,7 +20,7 @@ class Rename(BaseModel):
     name:str=Field(min_length=1,max_length=40,pattern=r"\S")
 
 class Add(BaseModel):
-    show_id:int=Field(gt=0)
+    show_id:int
     provider:Literal["netflix","prime","disney","crunchyroll"]
 
 class Mark(BaseModel):
@@ -32,7 +32,19 @@ class State(BaseModel):
     status:Literal["watching","paused","finished"]
 
 class Resolve(BaseModel):
-    show_id:int=Field(gt=0)
+    show_id:int
+
+class TitleWatched(BaseModel):
+    watched:bool
+
+class Position(BaseModel):
+    season:int|None=Field(default=None,ge=0,le=999)
+    episode:int|None=Field(default=None,ge=1,le=9999)
+    completion:float|None=Field(default=None,ge=0,le=100)
+    clear:bool=False
+
+class Kind(BaseModel):
+    media_type:Literal['series','movie']
 
 class Binding(BaseModel):
     source_profile:str=Field(min_length=1,max_length=80,pattern=r"\S")
@@ -75,20 +87,30 @@ def create_app(data=None, standalone=False, catalog=None):
         async with sync_lock:
             store.connection_update(profile_id,provider,last_attempt=now(),message="Import läuft")
             try:
-                results=await browser.collect(profile_id,provider)
-                for section,rows in results.items():
-                    store.observe(profile_id,provider,section,rows)
-                count=sum(len(x) for x in results.values())
-                message=f"{count} Beobachtungen eingelesen. Zuordnungen und unklare Folgen bitte prüfen."
+                results=await browser.collect(profile_id,provider,connection['source_profile'])
+                for section in ('watchlist','history'):
+                    if section in results:store.observe(profile_id,provider,section,results[section])
+                count=sum(len(results.get(s,[])) for s in ('watchlist','history'))
+                report=results.get('_report',{})
+                if any(v.get('status')=='blocked' for v in report.values() if isinstance(v,dict)):
+                    store.connection_update(profile_id,provider,enabled=0)
+                parts=[]
+                for section,label in [('watchlist','Merkliste'),('history','Verlauf')]:
+                    parts.append(f"{label}: {len(results[section])} Einträge" if section in results else f"{label}: nicht eingelesen")
+                message=' · '.join(parts)+'. Titel werden direkt angezeigt; Katalogdaten sind optional.'
+                warnings=[v.get('message') for v in report.values() if isinstance(v,dict) and v.get('message')]
+                if warnings:message+=' '+' '.join(warnings)
                 if provider=="disney":
                     message+=" Disney+-Folgenstand wird noch nicht automatisch eingelesen."
-                store.connection_update(profile_id,provider,last_sync=now(),message=message)
+                store.connection_update(profile_id,provider,last_sync=now(),message=message,last_report=json.dumps(report))
                 return {"message":message,"count":count}
             except BrowserBusy as exc:
                 store.connection_update(profile_id,provider,last_attempt=connection["last_attempt"],message=str(exc))
                 raise
             except BrowserProblem as exc:
-                store.connection_update(profile_id,provider,message=str(exc))
+                values={'message':str(exc),'last_report':json.dumps(browser.last_report)}
+                if isinstance(exc,BrowserBlocked):values['enabled']=0
+                store.connection_update(profile_id,provider,**values)
                 raise
 
     async def scheduler():
@@ -138,7 +160,7 @@ def create_app(data=None, standalone=False, catalog=None):
         response.headers["X-Content-Type-Options"]="nosniff"
         response.headers["Referrer-Policy"]="no-referrer"
         response.headers["Cache-Control"]="no-store"
-        response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' blob: https://static.tvmaze.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'"
+        response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' blob: https://static.tvmaze.com https://*.nflximg.net https://*.nflximg.com https://*.nflxso.net https://*.media-amazon.com https://*.images-amazon.com https://*.ssl-images-amazon.com https://*.bamgrid.com https://*.disneyplus.com https://*.dssott.com https://*.crunchyroll.com https://*.crunchyrollcdn.com https://images.metahub.space; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'"
         return response
 
     @app.exception_handler(ValueError)
@@ -171,10 +193,10 @@ def create_app(data=None, standalone=False, catalog=None):
         return {"ok":True}
 
     @app.get("/api/catalog")
-    async def search(q:str=""):
+    async def search(q:str="",kind:Literal['series','movie']='series'):
         if not 2<=len(q.strip())<=100:
             raise HTTPException(422,"Bitte mindestens zwei Zeichen eingeben")
-        return await catalog.search(q.strip())
+        return await catalog.search(q.strip(),kind) if kind=='movie' else await catalog.search(q.strip())
 
     @app.get("/api/profiles/{profile_id}/library")
     async def library(profile_id:int):
@@ -215,6 +237,21 @@ def create_app(data=None, standalone=False, catalog=None):
         store.mark(profile_id,show_id,body.episode_id,body.watched,body.through)
         return {"ok":True}
 
+    @app.patch('/api/profiles/{profile_id}/library/{show_id}/watched')
+    async def title_watched(profile_id:int,show_id:int,body:TitleWatched):
+        store.mark_title(profile_id,show_id,body.watched)
+        return {'ok':True}
+
+    @app.patch('/api/profiles/{profile_id}/library/{show_id}/position')
+    async def position(profile_id:int,show_id:int,body:Position):
+        store.native_position(profile_id,show_id,None if body.clear else body.model_dump(exclude={'clear'}))
+        return {'ok':True}
+
+    @app.patch('/api/profiles/{profile_id}/library/{show_id}/kind')
+    async def classify(profile_id:int,show_id:int,body:Kind):
+        store.classify(profile_id,show_id,body.media_type)
+        return {'ok':True}
+
     @app.get("/api/profiles/{profile_id}/connections")
     async def connections(profile_id:int):
         return store.connections(profile_id)
@@ -253,6 +290,11 @@ def create_app(data=None, standalone=False, catalog=None):
         validate(profile_id,provider)
         return Response(await browser.screenshot(profile_id,provider),media_type="image/jpeg")
 
+    @app.get('/api/profiles/{profile_id}/connections/{provider}/browser/status')
+    async def browser_status(profile_id:int,provider:str):
+        validate(profile_id,provider)
+        return await browser.status(profile_id,provider)
+
     @app.post("/api/profiles/{profile_id}/connections/{provider}/browser/action")
     async def browser_action(profile_id:int,provider:str,body:Action):
         validate(profile_id,provider)
@@ -273,6 +315,11 @@ def create_app(data=None, standalone=False, catalog=None):
     @app.get("/api/profiles/{profile_id}/pending")
     async def pending(profile_id:int):
         return store.pending(profile_id)
+
+    @app.delete('/api/profiles/{profile_id}/pending/{observation_id}')
+    async def dismiss(profile_id:int,observation_id:int):
+        store.dismiss(profile_id,observation_id)
+        return {'ok':True}
 
     @app.post("/api/profiles/{profile_id}/pending/{observation_id}")
     async def resolve(profile_id:int,observation_id:int,body:Resolve):

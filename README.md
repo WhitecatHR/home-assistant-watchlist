@@ -1,8 +1,10 @@
 # Watchlists für Home Assistant
 
-Quellcode einer experimentellen, selbst betriebenen Home-Assistant-App für zwei persönliche Serienprofile. Enthält Touchoberfläche, Cover-/Episodenkatalog, SQLite-Speicherung und einen lokalen Anmeldebrowser mit experimentellen Websiteimporten.
+Quellcode einer selbst betriebenen Home-Assistant-App für zwei persönliche Film- und Serienprofile. Enthält Touchoberfläche, direkte Anbieterlisten mit Covern, optionale Katalogdaten, SQLite-Speicherung und einen lokalen Anmeldebrowser mit experimentellen Websiteimporten.
 
-**Version 0.1 ist ein geprüfter Entwicklungsstand, keine bestätigte Komplettsynchronisierung der vier Streamingdienste.** Sie wurde noch nicht auf dem Zielgerät installiert. Siehe [Einrichtung und Grenzen](watchlists/DOCS.md).
+**Version 0.2 zeigt neu eingelesene Anbieter-Titel ohne manuelle Katalogzuordnung.** Serien-/Staffelzusätze werden bereinigt, Filme separat unterstützt und Sehverlauf und Merkliste getrennt. Die aktualisierten Anbieteradapter sind noch keine bestätigte Komplettsynchronisierung aller vier Dienste. Siehe [Änderungen](watchlists/CHANGELOG.md) und [Einrichtung und Grenzen](watchlists/DOCS.md).
+
+**Update von 0.1:** Add-on auf 0.2.0 aktualisieren, Weboberfläche neu laden und unter Dienste Netflix/Prime erneut einlesen. Vorhandene Anmeldungen und manuelle Fortschritte bleiben erhalten. Frühere unbestätigte Importe werden unter „Frühere Importe prüfen“ angezeigt. Bei Fehlversuchen helfen die neuen „Importdetails“.
 
 ## Installation aus Home Assistant
 

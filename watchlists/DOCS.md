@@ -1,11 +1,20 @@
-# Watchlists 0.1 – Einrichtung und Grenzen
+# Watchlists 0.2 – Einrichtung und Grenzen
 
-Diese erste Version ist eine **experimentelle Home-Assistant-App (Add-on)** für zwei Personen. Die lokale Serienverwaltung funktioniert unabhängig von den Streamingimporten. Es gibt keine kostenpflichtige Trakt-, SIMKL- oder Younify-Abhängigkeit. Strom, Speicherplatz und gegebenenfalls die eigene Hardware bleiben eure Kosten.
+Eine **Home-Assistant-App (Add-on)** für zwei Personen mit experimentellen Anbieterimporten. Die lokale Film-/Serienverwaltung funktioniert unabhängig von diesen Importen. Es gibt keine kostenpflichtige Trakt-, SIMKL- oder Younify-Abhängigkeit. Strom, Speicherplatz und gegebenenfalls die eigene Hardware bleiben eure Kosten.
+
+## Update von 0.1
+
+Auf 0.2.0 aktualisieren, Weboberfläche neu laden und Netflix/Prime unter Dienste erneut einlesen. Neu erkannte Anbieter-Titel erscheinen direkt mit ihren Quelldaten; eine Katalogzuordnung ist optional. Vorhandene Browser-Anmeldungen und manuelle Folgenstände werden nicht gelöscht. Frühere unbestätigte Importe bleiben unter „Frühere Importe prüfen“ erhalten und werden nicht als neue Watchlist vorausgesetzt.
+
+„Merkliste“ und „Sehverlauf“ sind getrennte Ansichten. Staffel-/Folgezusätze werden für die optionale Zuordnung bereinigt. Filme lassen sich direkt aus der Anbieter-Liste verwalten oder im separaten Cinemeta-Filmkatalog suchen; dieser kann Originaltitel verwenden. Fehlende Metadaten verhindern die Anzeige eines importierten Titels nicht.
+
+Bei fehlenden oder zusätzlichen Titeln unter Dienste → Importdetails prüfen, ob Merkliste und Verlauf erkannt wurden. Der Bericht enthält Bereichserkennung und Zähler, keine Cookies oder Anmeldetokens. Die App fällt bei unbekannten Listenbereichen nicht auf sämtliche Links einer Seite zurück.
 
 ## Was vorhanden ist
 
 - Zwei umbenennbare Profile mit eigenen Listen und Fortschritten, lokal in SQLite.
 - Seriensuche, Cover, Beschreibungen, Staffeln und Episoden über den öffentlichen TVmaze-Katalog.
+- Direkte Anbieter-Titel mit Quellcovern ohne Katalogpflicht; separater Filmkatalog über Cinemeta und persönlicher Gesehen-Status für Filme.
 - Antippen öffnet die Folgen; 550 ms Gedrückthalten öffnet Schnellaktionen. Scrollen bricht Gedrückthalten ab.
 - Folgen einzeln oder gesammelt bis zu einer Folge markieren. Einzelmarkierungen lassen sich direkt rückgängig machen.
 - Manuelle Dienstzuordnung, Pausieren, Abgeschlossen-Status und JSON-Datenexport.
@@ -23,13 +32,15 @@ Diese erste Version ist eine **experimentelle Home-Assistant-App (Add-on)** für
 | Disney+ | Merkliste über Webseite | Anmeldung und Seitenstruktur; **kein automatischer Folgenstand in 0.1** |
 | Crunchyroll | Merkliste und Sehverlauf über Webseiten | Anmeldung, aktuelle Profilauswahl und Folgen-/Fortschrittsdarstellung |
 
-**Keiner der vier Websiteadapter wurde mit einem echten Streamingkonto getestet.** Die enthaltenen DOM-Adapter und Parser wurden mit kontrollierten Beispielen geprüft. Das beweist keine erfolgreiche Anmeldung oder Übernahme beim Anbieter. Anbieter können den automatisierten Browser blockieren, Captchas anzeigen oder ihre Seiten ändern. Solche Sperren werden nicht umgangen. Die Browser-Domainlisten sind bewusst begrenzt und können legitime neue Anmeldedomains zunächst blockieren.
+**Der Nutzer hat die Netflix-/Prime-Anmeldung bestätigt. Die Importüberarbeitung 0.2 benötigt noch einen Praxistest am Konto.** Parser wurden mit kontrollierten Beispielen geprüft; das beweist keine vollständige Übernahme beim Anbieter. Crunchyroll zeigt beim Nutzer eine Sicherheitsprüfung. Erkannte Sicherheitsprüfungen werden angezeigt und ein automatischer Importzeitplan angehalten; diese Sperren werden nicht umgangen. Disney+ ist noch nicht am Konto geprüft. Domainlisten sind begrenzt und können neue Anmeldedomains zunächst blockieren.
 
 Die ausgewählten Streamingprofilnamen werden von euch bestätigt. Eine zuverlässige automatische Prüfung des gerade angemeldeten Profilnamens ist noch nicht implementiert. Bei erneutem Verbinden immer das richtige Profil auswählen.
 
-Importe sind **ergänzend**: unvollständige oder fehlgeschlagene Leseversuche löschen keine lokalen Listen oder Fortschritte. Auch vom Anbieter entfernte Einträge werden in 0.1 noch nicht automatisch entfernt.
+Importe sind **ergänzend**: unvollständige oder fehlgeschlagene Leseversuche löschen keine lokalen Listen oder Fortschritte. Auch vom Anbieter entfernte Einträge werden in 0.2 noch nicht automatisch entfernt.
 
-Neue importierte Titel benötigen zunächst eure Katalogzuordnung. Gleiche Anbieter-IDs werden anschließend wiedererkannt. Unterschiedliche IDs einzelner Episoden können weitere Zuordnungen erfordern. Filme sind in dieser Serienversion noch nicht enthalten.
+Neue Anbieter-Titel erscheinen direkt. Eine optionale Katalogzuordnung ergänzt weitere Episoden-/Coverdaten. Prime-Staffeln mit bereinigtem Seriennamen werden zusammengefasst; Netflix-Serien-IDs erlauben die Zuordnung mehrerer Folgen zu einer Serie. Bei unbekannten Typen werden gleichnamige, unterschiedliche Anbieter-IDs nicht als sicher identischer Film/Serie angenommen.
+
+Netflix-Verlaufsantworten können Titel, Folgenname, Zeit und Wiedergabeposition liefern. Eine begrenzte Metadatenabfrage im bereits angemeldeten Netflix-Browser kann zusätzlich Staffel/Folge liefern. Fehlen diese Daten oder antwortet die Website nicht wie erwartet, bleibt der Stand unbekannt. Es wird keine vollständige Historie oder lückenlose Episodenzählung behauptet. Direkte Titel erlauben persönliche Folgenstandkorrekturen auch ohne Katalog; manuelle Eingaben haben Vorrang.
 
 Eine Anzeige im Verlauf beweist nicht, dass eine Folge vollständig gesehen wurde. Automatisch als gesehen markiert wird nur, wenn Staffel/Folge eindeutig zugeordnet sind und die Webseite einen numerischen Fortschritt von mindestens 90 % liefert. Ansonsten erscheint die Beobachtung mit unbekanntem Abschluss. Manuelle Markierungen haben Vorrang. Unterschiedliche Anime-Staffelzählungen müssen gegebenenfalls manuell korrigiert werden.
 
@@ -61,7 +72,7 @@ Nach dem Start „Weboberfläche öffnen“ und bei Bedarf „In Seitenleiste an
 3. Unter „Dienste“ bei einem Anbieter „Verbinden“ drücken. Im Bild die offizielle Anbieter-Seite selbst bedienen.
 4. Für Eingaben zuerst das gewünschte Feld im Bild antippen. Den Text darunter eingeben und „Senden“ drücken. „Nächstes Feld“, „Enter“, Scrollen und Zoom stehen zur Verfügung. Passwort, E-Mail und Einmalcodes werden nicht in der App-Datenbank gespeichert.
 5. Das richtige Anbieterprofil auswählen, dessen Namen unten eintragen und bestätigen. Regelmäßige Importe sind zunächst aus; nur nach erfolgreichem Test einschalten.
-6. „Jetzt einlesen“ starten. Danach neue Titel unter „Importe zuordnen“ mit der richtigen Katalogserie verbinden und importierte Beobachtungen prüfen.
+6. „Jetzt einlesen“ starten. Die Merkliste zeigt bestätigte Anbietertitel direkt; „Katalogdaten ergänzen“ ist optional. In „Importdetails“ die getrennten Zähler für Merkliste und Verlauf prüfen.
 7. Für die zweite Person separat anmelden. Die Browserverzeichnisse sind getrennt.
 
 Der Anmeldebrowser schließt nach fünf Minuten ohne Bedienung. Eine geschlossene Oberfläche beendet die Website-Anmeldung nicht: Cookies verbleiben im lokalen Browserverzeichnis, bis „Trennen“ gewählt wird. Das laufende Browserfenster wird bei Dialogende geschlossen.
@@ -90,4 +101,4 @@ Die Testausführung steht unter `tests/`. Sie prüft unter anderem Profiltrennun
 
 ## Quellen und Lizenz
 
-Eigener Anwendungscode: MIT, siehe `LICENSE` im Repository. Seriendaten: [TVmaze API](https://www.tvmaze.com/api), [CC BY-SA](https://creativecommons.org/licenses/by-sa/4.0/). Rechte an den jeweiligen Coverbildern bleiben bei ihren Rechteinhabern. Dieses Projekt ist weder von Home Assistant noch den Streaminganbietern beauftragt oder zertifiziert.
+Eigener Anwendungscode: MIT, siehe `LICENSE` im Repository. Seriendaten: [TVmaze API](https://www.tvmaze.com/api), [CC BY-SA](https://creativecommons.org/licenses/by-sa/4.0/). Optionaler Filmkatalog: [Cinemeta](https://github.com/Stremio/cinemeta). Quellcover und Anbieterdaten bleiben beim jeweiligen Rechteinhaber. Dieses Projekt ist weder von Home Assistant noch den Streaminganbietern beauftragt oder zertifiziert.

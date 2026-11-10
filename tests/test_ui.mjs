@@ -98,12 +98,57 @@ assert.equal(w.document.querySelector('#modal').open,false);
 const py=fs.readFileSync(path.join(root,'watchlists/app/providers.py'),'utf8');
 const extractor=py.match(/EXTRACT_JS = r"""([\s\S]*?)"""/)[1];
 const fixture=new Window({url:'https://www.netflix.com/browse/my-list'});
-fixture.document.body.innerHTML='<article><a href="/title/123"><img alt="Testserie"></a><p>Staffel 2, Folge 3</p><progress max="100" value="96"></progress></article><article><a href="/title/124"><img alt="Ohne Fortschritt"></a></article><a href="https://evil.test/">Nicht importieren</a>';
+fixture.document.body.innerHTML='<div class="retable"><article><a href="/title/123"><img alt="Testserie"></a><p>Staffel 2, Folge 3</p><progress max="100" value="96"></progress></article><article><a href="/title/124"><img alt="Ohne Fortschritt"></a></article></div><section class="recommendations"><a href="/title/999"><img alt="Fremde Empfehlung"></a></section>';
 const extract=fixture.eval('('+extractor+')');
-const observations=extract({provider:'netflix',section:'history'});
+const extraction=extract({provider:'netflix',section:'history'});
+assert.equal(extraction.recognized,true);
+const observations=extraction.rows;
 assert.equal(observations.length,2);
 assert.equal(observations[0].completion,96);
 assert.equal(observations[1].completion,null);
+assert.ok(!observations.some(o=>o.title==='Fremde Empfehlung'));
+fixture.document.body.innerHTML='<article><a href="/title/999"><img alt="Keine bestätigte Liste"></a></article>';
+assert.equal(extract({provider:'netflix',section:'watchlist'}).recognized,false);
+const statusCode=py.match(/PAGE_STATUS_JS = r"""([\s\S]*?)"""/)[1];
+const status=fixture.eval('('+statusCode+')');
+fixture.document.body.textContent='Sicherheitsüberprüfung. Bestätigen Sie, dass Sie ein Mensch sind.';
+assert.equal(status().blocked,true);
+fixture.document.body.textContent='Meine Watchlist';assert.equal(status().blocked,false);
+
+// Native titles appear without metadata. History and legacy imports do not inflate the default watchlist.
+const originalAPI=w.WatchAPI;
+const nativeMovie={id:-10,name:'Ein Prime-Film',native:true,media_type:'movie',summary:'Direkt importiert',providers:[{provider:'prime',on_watchlist:1,source:'import'}],source_position:{},movie_watched:false,total:0,watched:0,user_status:'watching'};
+const nativeSeries={id:-11,name:'Dr. House',native:true,media_type:'series',summary:'Direkt importiert',providers:[{provider:'netflix',on_watchlist:1,source:'import'}],source_position:{season:2,episode:7,completion:45},total:0,watched:0,user_status:'watching'};
+const historyOnly={...nativeSeries,id:-12,name:'Nur im Verlauf',providers:[{provider:'netflix',on_watchlist:0,source:'import'}]};
+const legacy={...nativeSeries,id:9001,name:'Früherer Import',native:false,legacy_only:true,providers:[{provider:'netflix',on_watchlist:1,source:'legacy'}]};
+const nativeLibrary=[nativeMovie,nativeSeries,historyOnly,legacy];
+Object.assign(w.WatchApp.state,{library:nativeLibrary,view:'home',profile:1,provider:'all',status:'all',collection:'watchlist',query:''});
+w.WatchAPI=async(path,opts={})=>{
+  if(path==='api/profiles/1/library')return structuredClone(nativeLibrary);
+  if(path==='api/profiles/1/pending')return [];
+  if(path==='api/profiles/1/connections')return [];
+  if(path==='api/profiles/1/library/-10/watched'){nativeMovie.movie_watched=opts.body.watched;return{ok:true};}
+  if(path==='api/profiles/1/library/-11/position'){nativeSeries.source_position=opts.body;nativeSeries.position_manual=true;return{ok:true};}
+  return originalAPI(path,opts);
+};
+w.WatchApp.render();
+assert.equal(w.document.querySelectorAll('[data-show]').length,2);
+assert.match(w.document.querySelector('[data-show="-11"]').textContent,/S2 · F7/);
+assert.ok(!w.document.querySelector('[data-show="-12"]'));
+assert.ok(!w.document.querySelector('[data-show="9001"]'));
+w.document.querySelector('[data-show="-10"]').click();
+assert.ok(w.document.querySelector('#movie-seen'));
+const seen=w.document.querySelector('#movie-seen');seen.checked=true;seen.dispatchEvent(new w.Event('change',{bubbles:true}));
+await until(()=>nativeMovie.movie_watched);
+await wait(60);
+await w.WatchApp.closeModal();
+w.document.querySelector('[data-show="-11"]').click();
+w.document.querySelector('#native-season').value='3';w.document.querySelector('#native-episode').value='8';
+w.document.querySelector('#native-position').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+await until(()=>nativeSeries.source_position.episode===8);
+await wait(60);
+await w.WatchApp.closeModal();
+w.WatchAPI=originalAPI;
 
 // CSS parses, mobile adaptations exist, and unsafe text is escaped.
 const styles=fs.readFileSync(path.join(staticDir,'app.css'),'utf8');
@@ -114,4 +159,4 @@ assert.match(styles,/prefers-reduced-motion/);
 assert.equal(w.WatchApp.esc('<img onerror="bad">'),'&lt;img onerror=&quot;bad&quot;&gt;');
 assert.deepEqual(errors,[]);
 await w.happyDOM.close();await fixture.happyDOM.close();
-console.log(JSON.stringify({passed:true,checks:['two profile separation','cover rendering','episode editing','tap','hold 550ms and click suppression','drag and cancel','catalog search and add','honest connection demo','DOM evidence extraction','CSS parsing','escaping'],browserVisualQA:false},null,2));
+console.log(JSON.stringify({passed:true,checks:['two profile separation','cover rendering','episode editing','tap','hold 550ms and click suppression','drag and cancel','catalog search and add','honest connection demo','scoped DOM extraction excludes recommendations','unknown roots rejected','security check recognized','native titles without matching','watchlist/history/legacy separated','movie seen status','native episode position','CSS parsing','escaping'],browserVisualQA:false},null,2));

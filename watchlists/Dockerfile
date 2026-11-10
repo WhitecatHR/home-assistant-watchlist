@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 ARG BUILD_ARCH
-LABEL io.hass.name="Watchlists" io.hass.type="addon" io.hass.version="0.1.0" io.hass.arch="${BUILD_ARCH}"
+LABEL io.hass.name="Watchlists" io.hass.type="addon" io.hass.version="0.2.0" io.hass.arch="${BUILD_ARCH}"
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DISPLAY=:99 \
     CHROMIUM_PATH=/usr/bin/chromium WATCHLIST_DATA=/data/watchlists
 WORKDIR /app
